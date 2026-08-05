@@ -66,8 +66,15 @@ class FileRecordRepository implements RecordRepository {
   }
 
   private async save(): Promise<void> {
-    await fs.mkdir(path.dirname(this.file), { recursive: true });
-    await fs.writeFile(this.file, JSON.stringify(this.records ?? [], null, 2), 'utf8');
+    try {
+      await fs.mkdir(path.dirname(this.file), { recursive: true });
+      await fs.writeFile(this.file, JSON.stringify(this.records ?? [], null, 2), 'utf8');
+    } catch (err) {
+      // 只读文件系统（如 Vercel）下降级为进程内内存存储
+      console.warn(
+        `[records] 本地文件不可写，记录仅保存在内存: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
   }
 
   async list(): Promise<InvestmentRecord[]> {

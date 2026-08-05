@@ -83,8 +83,15 @@ export class ReserveStateStore implements ReserveStateRepository {
         return;
       }
     }
-    await fs.mkdir(path.dirname(this.file), { recursive: true });
-    await fs.writeFile(this.file, JSON.stringify(state, null, 2), 'utf8');
+    try {
+      await fs.mkdir(path.dirname(this.file), { recursive: true });
+      await fs.writeFile(this.file, JSON.stringify(state, null, 2), 'utf8');
+    } catch (err) {
+      // 只读文件系统（如 Vercel）下降级为进程内内存存储
+      console.warn(
+        `[reserve] 本地文件不可写，资金池状态仅保存在内存: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
   }
 
   async get(): Promise<ReserveState> {

@@ -1,5 +1,6 @@
 import path from 'path';
 import dotenv from 'dotenv';
+import os from 'os';
 
 dotenv.config();
 
@@ -12,7 +13,12 @@ export const config = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
 
   /** 运行数据目录：缓存 / 设置 / 投资记录（文件模式） */
-  dataDir: path.resolve(process.env.DATA_DIR ?? path.join(__dirname, '..', 'data')),
+  dataDir: path.resolve(
+    process.env.DATA_DIR ??
+      (process.env.NODE_ENV === 'production'
+        ? path.join(os.tmpdir(), 'btc-dca-data')
+        : path.join(__dirname, '..', 'data'))
+  ),
 
   /** 存储模式：file（零配置） | postgres（Prisma） */
   databaseMode: (process.env.DATABASE_MODE ?? 'file') as 'file' | 'postgres',
