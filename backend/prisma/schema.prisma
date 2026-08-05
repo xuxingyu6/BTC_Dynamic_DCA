@@ -1,0 +1,31 @@
+// BTC Dynamic DCA Dashboard - Prisma Schema
+// 当前模型聚焦「投资记录」；未来可扩展 BacktestRun / IndicatorSnapshot 等实体。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// 用户真实投资记录
+model InvestmentRecord {
+  id                  String    @id @default(uuid())
+  date                DateTime  @db.Date
+  price               Float
+  amount              Float     /// 投入金额（USD）
+  quantity            Float     /// 买入 BTC 数量
+  marketState         String    /// 当时市场状态：normal / slight-undervalued / undervalued / extreme-undervalued
+  transactionType     String    @default("manual") /// core（底仓）/ acceleration（加速买入）/ manual（手动）
+  riskLevel           Int?      /// 加速买入时的风险等级（1-3）
+  triggeredIndicators Int?      /// 触发指标数量（0-3）
+  remainingReserve    Float?    /// 释放后剩余加速资金
+  note                String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([date])
+  @@map("investment_records")
+}

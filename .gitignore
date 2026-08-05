@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Local environment
+.env
+.env.local
+
+# Runtime data (caches, local records, settings)
+backend/data/
+!backend/data/.gitkeep
+
+# Logs & editor
+*.log
+.DS_Store
+.idea/
+.vscode/
+
+# Prisma
+backend/prisma/*.db
+backend/prisma/dev.db*
+

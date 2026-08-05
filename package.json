@@ -1,0 +1,27 @@
+{
+  "name": "btc-dynamic-dca-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BTC 动态混合定投策略分析平台 - BTC Dynamic DCA Dashboard",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n API,UI -c cyan,magenta \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "npm run dev -w backend",
+    "dev:frontend": "npm run dev -w frontend",
+    "build": "npm run build -w backend && npm run build -w frontend",
+    "start": "npm run start -w backend",
+    "db:up": "docker compose -f database/docker-compose.yml up -d",
+    "db:down": "docker compose -f database/docker-compose.yml down",
+    "db:generate": "npm run prisma:generate -w backend",
+    "db:migrate": "npm run prisma:deploy -w backend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
