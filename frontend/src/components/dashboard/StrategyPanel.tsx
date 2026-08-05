@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/utils/cn';
-import { fmtUsd, FREQUENCY_LABEL, STATE_META } from '@/utils/format';
+import { fmtUsd, FREQUENCY_LABEL, OPPORTUNITY_LABELS, STATE_META } from '@/utils/format';
 import type { Frequency, StrategyResult } from '@/types';
 
 export function StrategyPanel({
@@ -60,12 +60,12 @@ export function StrategyPanel({
       {/* 金额明细 */}
       <div className="mt-4 space-y-2.5 text-sm">
         <div className="flex items-center justify-between">
-          <span className="text-muted">基础投入</span>
+          <span className="text-muted">每日底仓</span>
           <span className="font-mono tnum text-secondary">{fmtUsd(strategy.baseAmount)}</span>
         </div>
         <div className="flex items-center justify-between">
           <span className="text-muted">
-            额外加仓 <span className="text-[10px] text-faint">Level {strategy.level}</span>
+            本次加仓 <span className="text-[10px] text-faint">{OPPORTUNITY_LABELS[strategy.level]}</span>
           </span>
           <span className={cn('font-mono tnum', strategy.extraAmount > 0 ? 'text-up' : 'text-muted')}>
             {strategy.extraAmount > 0 ? `+${fmtUsd(strategy.extraAmount)}` : '+$0'}
@@ -94,7 +94,7 @@ export function StrategyPanel({
       </div>
       <div className="mt-1.5 flex items-center justify-between text-[10px] text-faint">
         <span className="flex items-center gap-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-accent/70" /> 基础
+          <span className="h-1.5 w-1.5 rounded-full bg-accent/70" /> 底仓
         </span>
         <span className="flex items-center gap-1">
           <span className="h-1.5 w-1.5 rounded-full bg-up/70" /> 加仓

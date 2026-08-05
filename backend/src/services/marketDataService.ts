@@ -8,6 +8,7 @@ import * as bitbo from './providers/bitbo';
 import { buildIndicatorSeries } from '../strategy-engine/indicators/historyIndicators';
 import { getIndicators } from '../strategy-engine/registry';
 import { evaluateStrategy } from '../strategy-engine/strategyEngine';
+import { allocateMonthlyBudget } from '../strategy-engine/acceleration/capitalAllocationEngine';
 import type {
   DailyBar,
   DataSource,
@@ -274,7 +275,8 @@ export class MarketDataService {
       return { ...ind, source: 'live' }; // Puell 基于 CoinMetrics IssTotUSD 真实收入
     });
 
-    const strategy = evaluateStrategy(labeled, settings.strategy);
+    const allocation = allocateMonthlyBudget(settings.capital);
+    const strategy = evaluateStrategy(labeled, settings.strategy, allocation);
     const source: DataSource =
       snapshot.source === 'demo' || this.lastSource === 'demo' ? 'demo' : 'live';
 

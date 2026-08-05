@@ -24,11 +24,7 @@ export function Simulator() {
       const res = await api.runBacktest({
         startDate: values.startDate,
         endDate: values.endDate,
-        frequency: values.frequency,
-        baseAmount: values.baseAmount,
-        level1Amount: values.level1Amount,
-        level2Amount: values.level2Amount,
-        level3Amount: values.level3Amount,
+        monthlyInvestmentAmount: values.monthlyInvestmentAmount,
         ma200Multiplier: values.ma200Multiplier,
         mvrvThreshold: values.mvrvThreshold,
         puellThreshold: values.puellThreshold,
@@ -49,6 +45,7 @@ export function Simulator() {
       <div className="grid items-start gap-5 xl:grid-cols-3">
         <SimulatorForm
           strategy={settings?.strategy ?? null}
+          capital={settings?.capital ?? null}
           thresholds={settings?.indicators ?? null}
           loading={loading}
           onSubmit={(v) => void run(v)}
@@ -64,7 +61,7 @@ export function Simulator() {
               <EmptyState
                 icon={<LineChart className="h-10 w-10" />}
                 title="设置参数并运行回测"
-                subtitle="系统将使用历史 BTC 数据模拟两种策略：普通 DCA 固定投入，动态 DCA 依据 200W MA、MVRV、Puell 指标自动加仓。"
+                subtitle="系统在相同总预算下对比两种策略：普通 DCA 按日平均买入；动态 DCA 40% 每日底仓 + 60% 加速资金按指标释放，未使用资金跨月保留。"
               />
             </Card>
           )}
@@ -95,13 +92,11 @@ export function Simulator() {
                   <p className="mt-0.5 text-[11px] text-faint">每 BTC 节省</p>
                 </Card>
                 <Card className="p-4">
-                  <p className="text-[11px] uppercase tracking-wider text-muted">多投入资金</p>
+                  <p className="text-[11px] uppercase tracking-wider text-muted">BTC 数量提升比例</p>
                   <p className="mt-1 font-mono text-xl font-bold tnum text-secondary">
-                    {fmtUsd(delta?.extraInvested)}
+                    {delta ? `${delta.btcGainPct >= 0 ? '+' : ''}${delta.btcGainPct.toFixed(2)}%` : '--'}
                   </p>
-                  <p className="mt-0.5 text-[11px] text-faint">
-                    {result.buyCount} 次定投 · {result.days} 天
-                  </p>
+                  <p className="mt-0.5 text-[11px] text-faint">相对普通 DCA</p>
                 </Card>
               </div>
 
@@ -120,7 +115,7 @@ export function Simulator() {
       {result && <BacktestCharts result={result} />}
 
       <p className="px-1 text-[11px] leading-relaxed text-faint">
-        回测说明：动态策略依据当日已知指标（无未来函数）在低估区间加仓；回测结果基于历史数据，不代表未来收益，仅供策略研究参考。
+        回测说明：两种策略使用相同总预算（资金公平校验），动态策略依据当日已知指标（无未来函数）释放加速资金，期末剩余资金一次性投入以保证本金一致。回测结果基于历史数据，不代表未来收益，仅供策略研究参考。
       </p>
     </div>
   );

@@ -85,3 +85,11 @@ export const FREQUENCY_LABEL: Record<string, string> = {
   weekly: '每周',
   monthly: '每月',
 };
+
+/** 加仓机会等级中文标签（资金管理模块） */
+export const OPPORTUNITY_LABELS: Record<number, string> = {
+  0: '正常区域',
+  1: '轻度机会',
+  2: '明显机会',
+  3: '极端机会',
+};

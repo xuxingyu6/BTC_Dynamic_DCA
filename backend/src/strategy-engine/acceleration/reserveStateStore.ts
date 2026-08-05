@@ -6,6 +6,8 @@ import type { ReserveState } from './types';
 
 /**
  * 加速资金池状态存储（JSON 文件，零配置）。
+ *
+ * 滚动管理：跨月不重置余额，上月剩余自动保留并累加本月新增。
  * 结构可扩展：未来接入 PostgreSQL 时替换为 Prisma 实现即可。
  */
 
@@ -17,7 +19,9 @@ export interface ReserveStateRepository {
 function defaultState(): ReserveState {
   return {
     month: currentMonthISO(),
-    initialReserve: 0,
+    balance: 0,
+    carryover: 0,
+    monthlyAdded: 0,
     used: 0,
     deployedThisMonth: 0,
     lastDeployAt: null,
@@ -32,12 +36,32 @@ export class ReserveStateStore implements ReserveStateRepository {
     if (this.cache) return this.cache;
     try {
       const raw = await fs.readFile(this.file, 'utf8');
-      const parsed = JSON.parse(raw) as Partial<ReserveState>;
+      const parsed = JSON.parse(raw) as Partial<ReserveState> & {
+        initialReserve?: number;
+      };
       const base = defaultState();
+
+      // 兼容旧版本字段（initialReserve）：旧模型下该值即“本月新增池”
+      const legacyReserve = Number(parsed.initialReserve) || 0;
+      const legacyUsed = Number(parsed.used) || 0;
+      const hasBalance = typeof parsed.balance === 'number' && Number.isFinite(parsed.balance);
+      const balance = hasBalance
+        ? Number(parsed.balance)
+        : Math.max(0, legacyReserve - legacyUsed);
+      const monthlyAdded =
+        typeof parsed.monthlyAdded === 'number' && Number.isFinite(parsed.monthlyAdded)
+          ? Number(parsed.monthlyAdded)
+          : legacyReserve;
+
       this.cache = {
         month: typeof parsed.month === 'string' ? parsed.month : base.month,
-        initialReserve: Number(parsed.initialReserve) || 0,
-        used: Number(parsed.used) || 0,
+        balance,
+        carryover:
+          typeof parsed.carryover === 'number' && Number.isFinite(parsed.carryover)
+            ? Number(parsed.carryover)
+            : 0,
+        monthlyAdded,
+        used: legacyUsed,
         deployedThisMonth: Number(parsed.deployedThisMonth) || 0,
         lastDeployAt: typeof parsed.lastDeployAt === 'string' ? parsed.lastDeployAt : null,
       };

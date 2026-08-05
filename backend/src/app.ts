@@ -8,6 +8,7 @@ import { backtestRouter } from './routes/backtest';
 import { recordsRouter } from './routes/records';
 import { settingsRouter } from './routes/settings';
 import { reserveRouter } from './routes/reserve';
+import { portfolioRouter } from './routes/portfolio';
 
 export const app = express();
 
@@ -24,6 +25,7 @@ app.use('/api', backtestRouter);
 app.use('/api', recordsRouter);
 app.use('/api', settingsRouter);
 app.use('/api', reserveRouter);
+app.use('/api', portfolioRouter);
 
 // 404
 app.use((req: Request, res: Response) => {

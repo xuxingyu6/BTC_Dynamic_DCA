@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-import { Play } from 'lucide-react';
+import { Play, Scale } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardHeader } from '@/components/ui/Card';
-import { Field, NumberInput, SelectInput, TextInput } from '@/components/ui/Inputs';
-import type { BacktestRequest, Frequency, IndicatorThresholds, StrategyConfig } from '@/types';
+import { Field, NumberInput, TextInput } from '@/components/ui/Inputs';
+import type {
+  CapitalAllocationConfig,
+  IndicatorThresholds,
+  StrategyConfig,
+} from '@/types';
 
 export interface SimulatorFormValues {
   startDate: string;
   endDate: string;
-  frequency: Frequency;
-  baseAmount: number;
-  level1Amount: number;
-  level2Amount: number;
-  level3Amount: number;
+  /** 每月投入预算（普通 DCA 与动态 DCA 共用） */
+  monthlyInvestmentAmount: number;
   feeRatePct: number;
   ma200Multiplier: number;
   mvrvThreshold: number;
@@ -39,11 +40,13 @@ const PRESETS = [
 
 export function SimulatorForm({
   strategy,
+  capital,
   thresholds,
   loading,
   onSubmit,
 }: {
   strategy: StrategyConfig | null;
+  capital: CapitalAllocationConfig | null;
   thresholds: IndicatorThresholds | null;
   loading: boolean;
   onSubmit: (values: SimulatorFormValues) => void;
@@ -53,11 +56,8 @@ export function SimulatorForm({
   const [values, setValues] = useState<SimulatorFormValues>({
     startDate: yearsAgoISO(3),
     endDate: todayISO(),
-    frequency: 'weekly',
-    baseAmount: 100,
-    level1Amount: 500,
-    level2Amount: 1000,
-    level3Amount: 1500,
+    // 金额默认值在设置加载后按用户“每月投资预算”动态填入
+    monthlyInvestmentAmount: 0,
     feeRatePct: 0.1,
     ma200Multiplier: 1.1,
     mvrvThreshold: 1,
@@ -71,17 +71,13 @@ export function SimulatorForm({
     initializedRef.current = true;
     setValues((v) => ({
       ...v,
-      frequency: strategy.frequency,
-      baseAmount: strategy.baseAmount,
-      level1Amount: strategy.level1Amount,
-      level2Amount: strategy.level2Amount,
-      level3Amount: strategy.level3Amount,
+      monthlyInvestmentAmount: capital?.monthlyInvestmentAmount ?? 1000,
       feeRatePct: strategy.feeRatePct,
       ma200Multiplier: thresholds.ma200Multiplier,
       mvrvThreshold: thresholds.mvrvThreshold,
       puellThreshold: thresholds.puellThreshold,
     }));
-  }, [strategy, thresholds]);
+  }, [strategy, capital, thresholds]);
 
   const set = <K extends keyof SimulatorFormValues>(key: K, val: SimulatorFormValues[K]) =>
     setValues((v) => ({ ...v, [key]: val }));
@@ -95,6 +91,10 @@ export function SimulatorForm({
       setError('开始日期必须早于结束日期');
       return;
     }
+    if (!values.monthlyInvestmentAmount || values.monthlyInvestmentAmount <= 0) {
+      setError('请输入有效的每月投资预算');
+      return;
+    }
     setError(null);
     onSubmit(values);
   };
@@ -103,7 +103,7 @@ export function SimulatorForm({
     <Card className="flex h-fit flex-col p-6 xl:sticky xl:top-20">
       <CardHeader
         title="回测参数"
-        subtitle="对比普通 DCA 与动态 DCA"
+        subtitle="普通 DCA 与动态 DCA 基于相同总预算比较"
         right={
           <div className="flex flex-wrap gap-1">
             {PRESETS.map((p) => (
@@ -141,23 +141,13 @@ export function SimulatorForm({
           </Field>
         </div>
 
-        <Field label="定投频率">
-          <SelectInput
-            value={values.frequency}
-            onChange={(e) => set('frequency', e.target.value as Frequency)}
-          >
-            <option value="daily">每日</option>
-            <option value="weekly">每周</option>
-            <option value="monthly">每月</option>
-          </SelectInput>
-        </Field>
-
         <div className="grid grid-cols-2 gap-3">
-          <Field label="基础定投 (USD)">
+          <Field label="每月投资预算 (USD)" hint="两种策略共用同一总预算">
             <NumberInput
               min={1}
-              value={values.baseAmount}
-              onChange={(e) => set('baseAmount', Number(e.target.value) || 0)}
+              step={100}
+              value={values.monthlyInvestmentAmount}
+              onChange={(e) => set('monthlyInvestmentAmount', Number(e.target.value) || 0)}
             />
           </Field>
           <Field label="手续费率 (%)">
@@ -171,34 +161,22 @@ export function SimulatorForm({
           </Field>
         </div>
 
-        <div className="rounded-xl border border-line bg-inset p-3">
-          <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted">
-            低估加仓金额 (USD)
+        {/* 资金公平说明 */}
+        <div className="rounded-xl border border-accent/20 bg-accent/[0.06] p-3 text-[11px] leading-relaxed text-muted">
+          <p className="mb-1 flex items-center gap-1.5 font-medium text-accent">
+            <Scale className="h-3.5 w-3.5" />
+            资金公平比较
           </p>
-          <div className="grid grid-cols-3 gap-2">
-            {(
-              [
-                ['L1', 'level1Amount'],
-                ['L2', 'level2Amount'],
-                ['L3', 'level3Amount'],
-              ] as const
-            ).map(([label, key]) => (
-              <Field key={key} label={`满足 ${label} 指标`}>
-                <NumberInput
-                  min={0}
-                  value={values[key]}
-                  onChange={(e) => set(key, Number(e.target.value) || 0)}
-                />
-              </Field>
-            ))}
-          </div>
+          <p>策略 A（普通 DCA）：每月预算按日平均买入，不看指标。</p>
+          <p>策略 B（动态 DCA）：40% 每日底仓 + 60% 加速资金池，指标触发时按当前余额释放（10% / 30% / 60%），未使用资金跨月保留、期末一次性投入。</p>
+          <p className="mt-1 text-faint">两策略总投入本金必须一致，否则禁止比较。</p>
         </div>
 
         <button
           onClick={() => setShowAdvanced((s) => !s)}
           className="text-[11px] font-medium text-muted hover:text-accent"
         >
-          {showAdvanced ? '▾ 收起指标阈值' : '▸ 高级：指标阈值'}
+          {showAdvanced ? '▴ 收起指标阈值' : '▾ 高级：指标阈值'}
         </button>
 
         {showAdvanced && (
@@ -237,7 +215,7 @@ export function SimulatorForm({
 
         <Button variant="primary" size="lg" className="w-full" onClick={submit} loading={loading}>
           <Play className="h-4 w-4" />
-          运行回测
+          运行公平回测
         </Button>
       </div>
     </Card>

@@ -5,6 +5,7 @@ import type {
   HistoryResponse,
   IndicatorsResponse,
   InvestmentRecord,
+  PortfolioStatus,
   RecordInput,
   ReserveDeployResult,
   ReserveStatus,
@@ -68,4 +69,9 @@ export const api = {
 
   resetReserve: () =>
     request<{ ok: boolean }>('/api/reserve/reset', { method: 'POST' }),
+
+  getPortfolio: () => request<PortfolioStatus>('/api/portfolio'),
+
+  updatePortfolio: (body: { mode?: 'manual' | 'records'; btcAmount: number; avgCost: number }) =>
+    request<PortfolioStatus>('/api/portfolio', { method: 'PUT', body: JSON.stringify(body) }),
 };

@@ -12,12 +12,8 @@ export interface IndicatorThresholds {
   puellExtreme: number; // Puell < 0.5 极端
 }
 
-/** 定投策略参数（全部可配置） */
+/** 定投策略参数（资金金额由每月投资金额 + 固定比例动态计算） */
 export interface StrategyConfig {
-  baseAmount: number; // 基础定投金额
-  level1Amount: number; // 满足 1 个指标：额外加仓
-  level2Amount: number; // 满足 2 个指标：额外加仓
-  level3Amount: number; // 满足 3 个指标：额外加仓
   frequency: Frequency;
   feeRatePct: number; // 交易手续费率（%）
 }

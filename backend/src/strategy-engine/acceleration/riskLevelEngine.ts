@@ -46,8 +46,8 @@ export function riskLevelMarketState(level: RiskLevel): string {
 }
 
 export const RISK_LEVEL_LABELS: Record<RiskLevel, string> = {
-  0: 'Level 0 · 正常区域',
-  1: 'Level 1 · 轻度低估',
-  2: 'Level 2 · 明显低估',
-  3: 'Level 3 · 极端低估',
+  0: '正常区域',
+  1: '轻度机会',
+  2: '明显机会',
+  3: '极端机会',
 };

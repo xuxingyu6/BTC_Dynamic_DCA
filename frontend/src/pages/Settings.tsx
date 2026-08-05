@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { RotateCcw, Save } from 'lucide-react';
+import { Lock, RotateCcw, Save } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardHeader } from '@/components/ui/Card';
@@ -7,6 +7,7 @@ import { Field, NumberInput, SelectInput } from '@/components/ui/Inputs';
 import { Toast } from '@/components/ui/Toast';
 import { useSettings } from '@/context/SettingsContext';
 import { useTheme, type ThemeMode } from '@/context/ThemeContext';
+import { fmtUsd } from '@/utils/format';
 import type { AppSettings } from '@/types';
 
 export function Settings() {
@@ -30,17 +31,8 @@ export function Settings() {
     );
   }
 
-  const setStrategy = (key: keyof AppSettings['strategy'], value: number | string) =>
-    setForm((f) => (f ? { ...f, strategy: { ...f.strategy, [key]: value } } : f));
-
   const setIndicator = (key: keyof AppSettings['indicators'], value: number) =>
     setForm((f) => (f ? { ...f, indicators: { ...f.indicators, [key]: value } } : f));
-
-  const setCapital = (key: keyof AppSettings['capital'], value: number) =>
-    setForm((f) => (f ? { ...f, capital: { ...f.capital, [key]: value } } : f));
-
-  const setAcceleration = (key: keyof AppSettings['acceleration'], value: number | null) =>
-    setForm((f) => (f ? { ...f, acceleration: { ...f.acceleration, [key]: value } } : f));
 
   const saveAll = async () => {
     setSaving(true);
@@ -61,6 +53,11 @@ export function Settings() {
     showToast('已恢复默认设置');
   };
 
+  const monthly = form.capital.monthlyInvestmentAmount;
+  const coreMonthly = Math.round(monthly * 0.4 * 100) / 100;
+  const reserveMonthly = Math.round(monthly * 0.6 * 100) / 100;
+  const coreDaily = Math.round((coreMonthly / 30) * 100) / 100;
+
   return (
     <div className="mx-auto max-w-3xl space-y-5">
       {/* 外观 */}
@@ -71,33 +68,123 @@ export function Settings() {
         </div>
       </Card>
 
-      {/* 定投参数 */}
+      {/* 资金管理 */}
       <Card className="p-6">
-        <CardHeader title="定投参数" subtitle="基础定投金额与各低估等级的加仓金额" />
-        <div className="mt-5 grid grid-cols-2 gap-4 md:grid-cols-4">
-          <Field label="基础定投 (USD)">
-            <NumberInput min={1} value={form.strategy.baseAmount} onChange={(e) => setStrategy('baseAmount', Number(e.target.value) || 0)} />
+        <CardHeader
+          title="资金管理"
+          subtitle="仅可自定义每月投资金额，策略核心比例与释放规则固定"
+          right={
+            <Badge tone="slate">
+              <Lock className="mr-1 h-3 w-3" />
+              策略核心已锁定
+            </Badge>
+          }
+        />
+        <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field
+            label="每月投资金额 (USD)"
+            hint="自动拆分：底仓 40% + 加速 60%"
+          >
+            <NumberInput
+              min={1}
+              step={100}
+              value={monthly}
+              onChange={(e) =>
+                setForm((f) =>
+                  f
+                    ? {
+                        ...f,
+                        capital: {
+                          ...f.capital,
+                          monthlyInvestmentAmount: Number(e.target.value) || 0,
+                        },
+                      }
+                    : f
+                )
+              }
+            />
           </Field>
-          <Field label="满足 1 指标加仓">
-            <NumberInput min={0} value={form.strategy.level1Amount} onChange={(e) => setStrategy('level1Amount', Number(e.target.value) || 0)} />
-          </Field>
-          <Field label="满足 2 指标加仓">
-            <NumberInput min={0} value={form.strategy.level2Amount} onChange={(e) => setStrategy('level2Amount', Number(e.target.value) || 0)} />
-          </Field>
-          <Field label="满足 3 指标加仓">
-            <NumberInput min={0} value={form.strategy.level3Amount} onChange={(e) => setStrategy('level3Amount', Number(e.target.value) || 0)} />
-          </Field>
+          <div className="rounded-xl border border-line bg-inset px-4 py-3 text-xs leading-relaxed text-muted">
+            <p className="mb-1 font-medium text-secondary">固定拆分示例（按当前输入）</p>
+            <p>长期底仓定投：{fmtUsd(coreMonthly)}（40%）→ 每日 {fmtUsd(coreDaily)}</p>
+            <p>加速资金：{fmtUsd(reserveMonthly)}（60%）→ 等待机会分批释放</p>
+          </div>
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-4">
-          <Field label="定投频率">
-            <SelectInput value={form.strategy.frequency} onChange={(e) => setStrategy('frequency', e.target.value)}>
-              <option value="daily">每日</option>
-              <option value="weekly">每周</option>
-              <option value="monthly">每月</option>
-            </SelectInput>
+
+        {/* 固定规则展示 */}
+        <div className="mt-4 rounded-xl border border-line bg-inset p-4">
+          <p className="mb-3 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted">
+            <Lock className="h-3 w-3" />
+            固定策略核心（不可修改）
+          </p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <FixedRule label="资金拆分" value="40% 底仓 / 60% 加速" />
+            <FixedRule label="每日底仓" value="底仓月额度 ÷ 30" />
+            <FixedRule label="本月使用上限" value="加速资金的 100%" />
+            <FixedRule label="轻度机会（1 指标）" value="释放加速资金 10%" />
+            <FixedRule label="明显机会（2 指标）" value="释放加速资金 30%" />
+            <FixedRule label="极端机会（3 指标）" value="释放加速资金 60%" />
+          </div>
+          <p className="mt-3 text-[11px] text-faint">
+            检测频率：每周日检测一次三个指标（200W MA / MVRV / Puell）。
+          </p>
+        </div>
+
+        {/* 当前计划实时预览 */}
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <PlanPreview label="每月投入" value={fmtUsd(monthly)} />
+          <PlanPreview label="长期底仓（40%）" value={fmtUsd(coreMonthly)} />
+          <PlanPreview label="每日自动买入" value={fmtUsd(coreDaily)} />
+          <PlanPreview label="加速资金（60%）" value={fmtUsd(reserveMonthly)} />
+        </div>
+      </Card>
+
+      {/* 我的BTC资产 */}
+      <Card className="p-6">
+        <CardHeader
+          title="我的BTC资产"
+          subtitle="只需输入持有数量与平均持仓成本，本金与收益自动计算"
+        />
+        <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="BTC 持有数量" hint="例如：0.5">
+            <NumberInput
+              min={0}
+              step="0.0001"
+              value={form.portfolio.btcAmount}
+              onChange={(e) =>
+                setForm((f) =>
+                  f
+                    ? {
+                        ...f,
+                        portfolio: {
+                          ...f.portfolio,
+                          btcAmount: Number(e.target.value) || 0,
+                        },
+                      }
+                    : f
+                )
+              }
+            />
           </Field>
-          <Field label="交易手续费率 (%)" hint="回测时从买入金额中扣除">
-            <NumberInput min={0} max={5} step="0.01" value={form.strategy.feeRatePct} onChange={(e) => setStrategy('feeRatePct', Number(e.target.value) || 0)} />
+          <Field label="平均持仓成本 (USD/BTC)" hint="例如：83151">
+            <NumberInput
+              min={0}
+              step={100}
+              value={form.portfolio.avgCost}
+              onChange={(e) =>
+                setForm((f) =>
+                  f
+                    ? {
+                        ...f,
+                        portfolio: {
+                          ...f.portfolio,
+                          avgCost: Number(e.target.value) || 0,
+                        },
+                      }
+                    : f
+                )
+              }
+            />
           </Field>
         </div>
       </Card>
@@ -112,105 +199,14 @@ export function Settings() {
           <Field label="MVRV 低估阈值" hint="MVRV < 阈值触发">
             <NumberInput min={0} max={2} step="0.01" value={form.indicators.mvrvThreshold} onChange={(e) => setIndicator('mvrvThreshold', Number(e.target.value) || 0)} />
           </Field>
-          <Field label="MVRV 极端阈值" hint="MVRV < 阈值进入极端区">
+          <Field label="MVRV 极端阈值" hint="MVRV < 阈值进入极端区域">
             <NumberInput min={0} max={2} step="0.01" value={form.indicators.mvrvExtreme} onChange={(e) => setIndicator('mvrvExtreme', Number(e.target.value) || 0)} />
           </Field>
           <Field label="Puell 低估阈值" hint="Puell < 阈值触发">
             <NumberInput min={0} max={2} step="0.01" value={form.indicators.puellThreshold} onChange={(e) => setIndicator('puellThreshold', Number(e.target.value) || 0)} />
           </Field>
-          <Field label="Puell 极端阈值" hint="Puell < 阈值进入极端区">
+          <Field label="Puell 极端阈值" hint="Puell < 阈值进入极端区域">
             <NumberInput min={0} max={2} step="0.01" value={form.indicators.puellExtreme} onChange={(e) => setIndicator('puellExtreme', Number(e.target.value) || 0)} />
-          </Field>
-        </div>
-      </Card>
-
-      {/* 资金分配 */}
-      <Card className="p-6">
-        <CardHeader
-          title="资金分配"
-          subtitle="每月预算自动拆分为底仓（Core DCA）与加速资金（Acceleration Reserve）"
-        />
-        <div className="mt-5 grid grid-cols-2 gap-4 md:grid-cols-4">
-          <Field label="每月投资预算 (USD)">
-            <NumberInput
-              min={1}
-              value={form.capital.monthlyBudget}
-              onChange={(e) => setCapital('monthlyBudget', Number(e.target.value) || 0)}
-            />
-          </Field>
-          <Field label="Core 占比 (%)" hint="底仓每日自动买入">
-            <NumberInput
-              min={1}
-              max={99}
-              value={form.capital.corePercentage}
-              onChange={(e) => setCapital('corePercentage', Number(e.target.value) || 0)}
-            />
-          </Field>
-          <Field label="Reserve 占比 (%)" hint="留存为战略加速资金">
-            <NumberInput
-              min={1}
-              max={99}
-              value={form.capital.reservePercentage}
-              onChange={(e) => setCapital('reservePercentage', Number(e.target.value) || 0)}
-            />
-          </Field>
-          <div className="flex items-end rounded-lg border border-line bg-inset px-3 py-2 text-xs text-muted">
-            示例：预算 $1000 → Core ${form.capital.corePercentage * 10}/月 · Reserve ${form.capital.reservePercentage * 10}/月
-          </div>
-        </div>
-      </Card>
-
-      {/* 加速规则 */}
-      <Card className="p-6">
-        <CardHeader
-          title="加速释放规则"
-          subtitle="按风险等级分批释放加速资金，并设置月度释放上限"
-        />
-        <div className="mt-5 grid grid-cols-2 gap-4 md:grid-cols-5">
-          <Field label="Level 1 释放 (%)" hint="1 个指标触发">
-            <NumberInput
-              min={0}
-              max={100}
-              value={form.acceleration.level1Pct}
-              onChange={(e) => setAcceleration('level1Pct', Number(e.target.value) || 0)}
-            />
-          </Field>
-          <Field label="Level 2 释放 (%)" hint="2 个指标触发">
-            <NumberInput
-              min={0}
-              max={100}
-              value={form.acceleration.level2Pct}
-              onChange={(e) => setAcceleration('level2Pct', Number(e.target.value) || 0)}
-            />
-          </Field>
-          <Field label="Level 3 释放 (%)" hint="3 个指标触发">
-            <NumberInput
-              min={0}
-              max={100}
-              value={form.acceleration.level3Pct}
-              onChange={(e) => setAcceleration('level3Pct', Number(e.target.value) || 0)}
-            />
-          </Field>
-          <Field label="月度最大释放 (%)" hint="防止连续触发快速耗尽">
-            <NumberInput
-              min={1}
-              max={100}
-              value={form.acceleration.monthlyMaxDeploymentPct}
-              onChange={(e) => setAcceleration('monthlyMaxDeploymentPct', Number(e.target.value) || 100)}
-            />
-          </Field>
-          <Field label="资金池初始值 (USD)" hint="留空 = 预算 × Reserve 占比">
-            <NumberInput
-              min={0}
-              placeholder="自动"
-              value={form.acceleration.initialReserve ?? ''}
-              onChange={(e) =>
-                setAcceleration(
-                  'initialReserve',
-                  e.target.value === '' ? null : Number(e.target.value) || 0
-                )
-              }
-            />
           </Field>
         </div>
       </Card>
@@ -318,6 +314,24 @@ export function Settings() {
       </div>
 
       <Toast message={toast} />
+    </div>
+  );
+}
+
+function FixedRule({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-line bg-surface px-3 py-2.5">
+      <p className="text-[10px] uppercase tracking-wider text-muted">{label}</p>
+      <p className="mt-0.5 text-xs font-medium text-secondary">{value}</p>
+    </div>
+  );
+}
+
+function PlanPreview({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-line bg-surface px-3.5 py-3">
+      <p className="text-[10px] uppercase tracking-wider text-muted">{label}</p>
+      <p className="mt-1 font-mono text-lg font-bold tnum text-primary">{value}</p>
     </div>
   );
 }

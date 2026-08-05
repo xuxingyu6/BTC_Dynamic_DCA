@@ -4,10 +4,21 @@ import { z } from 'zod';
 import { config } from '../config';
 import type { IndicatorThresholds, StrategyConfig } from '../strategy-engine/types';
 import type { AccelerationRulesConfig, CapitalAllocationConfig } from '../strategy-engine/acceleration/types';
+import type { PortfolioMode } from '../utils/portfolio';
+import {
+  LEVEL1_RELEASE,
+  LEVEL2_RELEASE,
+  LEVEL3_RELEASE,
+  MONTHLY_MAX_DEPLOY_RATIO,
+} from '../strategy-engine/acceleration/fixedRules';
 
 /**
  * 应用设置存储（JSON 文件）。
- * 所有策略参数均可由用户在 Settings 页面修改，不写死。
+ *
+ * 资金管理模块：
+ *   - 用户仅可修改“每月投资金额”（monthlyInvestmentAmount）
+ *   - 底仓/加速比例（40/60）与释放规则（10/30/60）、月度上限（100%）
+ *     均为策略核心固定参数，保存时强制覆写，用户不可修改。
  */
 
 export interface DataSettings {
@@ -22,11 +33,28 @@ export interface UiSettings {
   refreshIntervalSec: number;
 }
 
+/**
+ * BTC 持仓配置（手动录入模式）
+ *
+ * 用户只需输入「BTC 持有数量 + 平均持仓成本」，
+ * 持仓本金、当前价值、浮动盈亏与收益率由系统自动计算。
+ * mode 字段预留扩展：manual = 手动录入（当前）；records = 交易记录自动计算（未来）。
+ */
+export interface PortfolioConfig {
+  /** 持仓来源模式（当前仅实现手动录入） */
+  mode: PortfolioMode;
+  /** BTC 持有数量 */
+  btcAmount: number;
+  /** 平均持仓成本（USD/BTC） */
+  avgCost: number;
+}
+
 export interface AppSettings {
   strategy: StrategyConfig;
   indicators: IndicatorThresholds;
   capital: CapitalAllocationConfig;
   acceleration: AccelerationRulesConfig;
+  portfolio: PortfolioConfig;
   data: DataSettings;
   ui: UiSettings;
 }
@@ -34,11 +62,7 @@ export interface AppSettings {
 export function defaultSettings(): AppSettings {
   return {
     strategy: {
-      baseAmount: 100,
-      level1Amount: 500,
-      level2Amount: 1000,
-      level3Amount: 1500,
-      frequency: 'weekly',
+      frequency: 'daily',
       feeRatePct: 0.1,
     },
     indicators: {
@@ -49,16 +73,18 @@ export function defaultSettings(): AppSettings {
       puellExtreme: 0.5,
     },
     capital: {
-      monthlyBudget: 1000,
-      corePercentage: 40,
-      reservePercentage: 60,
+      monthlyInvestmentAmount: 1000,
     },
     acceleration: {
-      level1Pct: 10,
-      level2Pct: 30,
-      level3Pct: 60,
-      monthlyMaxDeploymentPct: 100,
-      initialReserve: null, // null = 自动 = 预算 × 加速占比
+      level1Pct: Math.round(LEVEL1_RELEASE * 100),
+      level2Pct: Math.round(LEVEL2_RELEASE * 100),
+      level3Pct: Math.round(LEVEL3_RELEASE * 100),
+      monthlyMaxDeploymentPct: Math.round(MONTHLY_MAX_DEPLOY_RATIO * 100),
+    },
+    portfolio: {
+      mode: 'manual',
+      btcAmount: 0,
+      avgCost: 0,
     },
     data: {
       providerMode: 'auto',
@@ -72,10 +98,6 @@ export function defaultSettings(): AppSettings {
 
 const appSettingsSchema = z.object({
   strategy: z.object({
-    baseAmount: z.number().min(1).max(1_000_000),
-    level1Amount: z.number().min(0).max(1_000_000),
-    level2Amount: z.number().min(0).max(1_000_000),
-    level3Amount: z.number().min(0).max(1_000_000),
     frequency: z.enum(['daily', 'weekly', 'monthly']),
     feeRatePct: z.number().min(0).max(5),
   }),
@@ -86,21 +108,19 @@ const appSettingsSchema = z.object({
     puellThreshold: z.number().min(0).max(2),
     puellExtreme: z.number().min(0).max(2),
   }),
-  capital: z
-    .object({
-      monthlyBudget: z.number().min(1).max(10_000_000),
-      corePercentage: z.number().min(1).max(99),
-      reservePercentage: z.number().min(1).max(99),
-    })
-    .refine((c) => Math.round(c.corePercentage + c.reservePercentage) === 100, {
-      message: 'Core 与 Reserve 占比之和必须为 100%',
-    }),
+  capital: z.object({
+    monthlyInvestmentAmount: z.number().min(1).max(10_000_000),
+  }),
   acceleration: z.object({
-    level1Pct: z.number().min(0).max(100),
-    level2Pct: z.number().min(0).max(100),
-    level3Pct: z.number().min(0).max(100),
-    monthlyMaxDeploymentPct: z.number().min(1).max(100),
-    initialReserve: z.number().min(1).max(10_000_000).nullable(),
+    level1Pct: z.literal(10),
+    level2Pct: z.literal(30),
+    level3Pct: z.literal(60),
+    monthlyMaxDeploymentPct: z.literal(100),
+  }),
+  portfolio: z.object({
+    mode: z.enum(['manual', 'records']),
+    btcAmount: z.number().min(0).max(1_000_000),
+    avgCost: z.number().min(0).max(100_000_000),
   }),
   data: z.object({
     providerMode: z.enum(['auto', 'demo']),
@@ -116,6 +136,21 @@ const appSettingsSchema = z.object({
 
 type MergedSettings = AppSettings;
 
+/** 策略核心固定参数：保存时强制覆写，忽略客户端传值 */
+function withFixedRules(base: AppSettings): AppSettings {
+  return {
+    ...base,
+    strategy: { ...base.strategy, frequency: 'daily' },
+    capital: { monthlyInvestmentAmount: base.capital.monthlyInvestmentAmount },
+    acceleration: {
+      level1Pct: Math.round(LEVEL1_RELEASE * 100),
+      level2Pct: Math.round(LEVEL2_RELEASE * 100),
+      level3Pct: Math.round(LEVEL3_RELEASE * 100),
+      monthlyMaxDeploymentPct: Math.round(MONTHLY_MAX_DEPLOY_RATIO * 100),
+    },
+  };
+}
+
 export class SettingsStore {
   private current: AppSettings | null = null;
   private readonly file = path.join(config.dataDir, 'settings.json');
@@ -124,15 +159,27 @@ export class SettingsStore {
     if (this.current) return this.current;
     try {
       const raw = await fs.readFile(this.file, 'utf8');
-      const parsed = appSettingsSchema.safeParse(JSON.parse(raw));
+      const obj = JSON.parse(raw) as { portfolio?: Record<string, unknown> };
+      // 兼容旧版持仓配置：累计投入金额（totalInvested）→ 平均持仓成本（avgCost）
+      const pf = obj.portfolio;
+      if (pf && typeof pf === 'object') {
+        if (pf.mode === undefined) pf.mode = 'manual';
+        if (pf.avgCost === undefined && typeof pf.totalInvested === 'number') {
+          const btc = Number(pf.btcAmount) || 0;
+          const invested = Number(pf.totalInvested) || 0;
+          pf.avgCost = btc > 0 ? Math.round((invested / btc) * 100) / 100 : 0;
+          delete pf.totalInvested;
+        }
+      }
+      const parsed = appSettingsSchema.safeParse(obj);
       if (parsed.success) {
-        this.current = parsed.data;
-        return parsed.data;
+        this.current = withFixedRules(parsed.data);
+        return this.current;
       }
     } catch {
       /* 文件不存在或损坏时使用默认值 */
     }
-    this.current = defaultSettings();
+    this.current = withFixedRules(defaultSettings());
     return this.current;
   }
 
@@ -143,6 +190,7 @@ export class SettingsStore {
       indicators: { ...base.indicators, ...(patch.indicators ?? {}) },
       capital: { ...base.capital, ...(patch.capital ?? {}) },
       acceleration: { ...base.acceleration, ...(patch.acceleration ?? {}) },
+      portfolio: { ...base.portfolio, ...(patch.portfolio ?? {}) },
       data: {
         providerMode: patch.data?.providerMode ?? base.data.providerMode,
         manualOverride: {
@@ -152,7 +200,7 @@ export class SettingsStore {
       },
       ui: { ...base.ui, ...(patch.ui ?? {}) },
     };
-    const validated = appSettingsSchema.parse(merged);
+    const validated = appSettingsSchema.parse(withFixedRules(merged));
     this.current = validated;
     await fs.mkdir(path.dirname(this.file), { recursive: true });
     await fs.writeFile(this.file, JSON.stringify(validated, null, 2), 'utf8');
@@ -160,7 +208,7 @@ export class SettingsStore {
   }
 
   async reset(): Promise<AppSettings> {
-    this.current = defaultSettings();
+    this.current = withFixedRules(defaultSettings());
     await fs.mkdir(path.dirname(this.file), { recursive: true });
     await fs.writeFile(this.file, JSON.stringify(this.current, null, 2), 'utf8');
     return this.current;

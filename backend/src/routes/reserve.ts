@@ -5,6 +5,7 @@ import { accelerationReserveEngine } from '../strategy-engine/acceleration/accel
 import { reserveStateStore } from '../strategy-engine/acceleration/reserveStateStore';
 import { allocateMonthlyBudget } from '../strategy-engine/acceleration/capitalAllocationEngine';
 import { computeRiskLevel, riskLevelMarketState } from '../strategy-engine/acceleration/riskLevelEngine';
+import { opportunityLabel } from '../strategy-engine/acceleration/fixedRules';
 import { getRecordRepository } from '../db/recordsRepository';
 import type { AccelerationEngineConfig } from '../strategy-engine/acceleration/types';
 import { round8 } from '../utils/numbers';
@@ -23,9 +24,8 @@ export const reserveRouter = Router();
 async function resolveEngineConfig(): Promise<AccelerationEngineConfig> {
   const settings = await settingsStore.get();
   const allocation = allocateMonthlyBudget(settings.capital);
-  const initialReserve =
-    settings.acceleration.initialReserve ?? allocation.reserveMonthly;
-  return { initialReserve, rules: settings.acceleration };
+  // 本月新增加速资金 = 每月投资金额 × 60%（固定比例）
+  return { monthlyAdded: allocation.reserveMonthly, rules: settings.acceleration };
 }
 
 /** 基于实时指标计算当前风险等级 */
@@ -80,7 +80,7 @@ reserveRouter.post('/reserve/deploy', async (_req, res, next) => {
         riskLevel: result.level,
         triggeredIndicators: risk.triggered,
         remainingReserve: result.remaining,
-        note: `加速资金释放 Level ${result.level}（${risk.triggered}/3 指标触发）`,
+        note: `加速资金释放（${opportunityLabel(result.level)}），${risk.triggered}/3 指标触发`,
       });
     }
 

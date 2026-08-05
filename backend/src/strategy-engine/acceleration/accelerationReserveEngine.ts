@@ -1,4 +1,5 @@
 import { round2 } from '../../utils/numbers';
+import { remainingSundaysInMonth } from '../../utils/opportunities';
 import { currentMonthISO } from './capitalAllocationEngine';
 import { reserveStateStore, type ReserveStateRepository } from './reserveStateStore';
 import { computeRiskLevel, riskLevelDeployPct } from './riskLevelEngine';
@@ -11,14 +12,19 @@ import type {
 } from './types';
 
 /**
- * AccelerationReserveEngine
+ * AccelerationReserveEngine（加速资金滚动管理引擎）
  *
- * 加速资金管理核心引擎，负责：
- *   - 计算当前 Reserve 余额（Initial / Used / Remaining）
- *   - 根据 Risk Level 计算释放比例与金额
- *   - 判断剩余资金（余额不足时按实际余额释放）
- *   - 执行 Monthly Deployment Limit（防止连续触发快速耗尽）
- *   - 跨月重置本月释放计数
+ * 资金池生命周期：
+ *   每月新增 60% 投资金额进入加速资金池，未使用资金跨月自动保留。
+ *
+ *   当前余额 = 历史剩余 + 本月新增 − 已执行加速买入
+ *
+ * 释放规则（固定 10% / 30% / 60%）：
+ *   释放基数固定为“本月加速资金额度”（每月投资金额 × 60%），
+ *   而不是剩余余额 —— 避免连续触发出现递减：
+ *     释放金额 = 本月加速资金额度 × 等级比例
+ *     实际买入 = min(释放金额, 本月加速资金额度 − 本月已使用)
+ *   例如本月额度 $600，Level 2 连续触发：180 → 180 → 180 → 60（剩余不足时按实际）。
  *
  * 引擎不依赖任何页面/路由逻辑，可独立单元测试。
  */
@@ -26,21 +32,40 @@ import type {
 export class AccelerationReserveEngine {
   constructor(private readonly store: ReserveStateRepository) {}
 
-  /** 加载状态并处理跨月重置（月份变化时 deployedThisMonth 归零） */
-  private async loadState(initialReserve: number, now: Date): Promise<ReserveState> {
+  /**
+   * 加载状态并处理滚动逻辑：
+   *   - 跨月：上月余额 → 历史剩余，累加本月新增（每月投资金额 × 60%）
+   *   - 本月内每月投资金额变化：本月新增与余额联动重算
+   */
+  private async loadState(monthlyAdded: number, now: Date): Promise<ReserveState> {
     const state = await this.store.get();
     const month = currentMonthISO(now);
-    if (state.month !== month || state.initialReserve <= 0) {
+
+    if (state.month !== month) {
+      // 跨月滚动：上月余额保留为历史剩余，本月新增进入资金池
       const next: ReserveState = {
         ...state,
         month,
+        carryover: round2(state.balance),
+        monthlyAdded: round2(monthlyAdded),
+        balance: round2(state.balance + monthlyAdded),
         deployedThisMonth: 0,
-        // 已初始化的资金池保留；首次运行时写入配置值
-        initialReserve: state.initialReserve > 0 ? state.initialReserve : initialReserve,
       };
       await this.store.save(next);
       return next;
     }
+
+    if (state.monthlyAdded !== monthlyAdded) {
+      // 首次运行或每月投资金额变化：余额 = 历史剩余 + 本月新增 − 已执行
+      const next: ReserveState = {
+        ...state,
+        monthlyAdded: round2(monthlyAdded),
+        balance: round2(Math.max(0, state.carryover + monthlyAdded - state.deployedThisMonth)),
+      };
+      await this.store.save(next);
+      return next;
+    }
+
     return state;
   }
 
@@ -50,46 +75,55 @@ export class AccelerationReserveEngine {
     level: RiskLevel,
     now: Date = new Date()
   ): Promise<ReserveStatus> {
-    const state = await this.loadState(config.initialReserve, now);
-    const monthlyLimit = round2((state.initialReserve * config.rules.monthlyMaxDeploymentPct) / 100);
-    const remaining = round2(Math.max(0, state.initialReserve - state.used));
-    const monthlyRemaining = round2(Math.max(0, monthlyLimit - state.deployedThisMonth));
+    const state = await this.loadState(config.monthlyAdded, now);
+    // 本月加速资金额度 = 每月投资金额 × 60%（固定释放基数）
+    const monthlyAccelerationBudget = round2(state.monthlyAdded);
+    const monthlyLimit = round2(
+      (monthlyAccelerationBudget * config.rules.monthlyMaxDeploymentPct) / 100
+    );
     const pct = riskLevelDeployPct(level, config.rules);
-    const deploySuggestion = round2((state.initialReserve * pct) / 100);
+    const deploySuggestion = round2((monthlyAccelerationBudget * pct) / 100);
 
     return {
       month: state.month,
-      initialReserve: round2(state.initialReserve),
+      balance: round2(state.balance),
+      carryover: round2(state.carryover),
+      monthlyAdded: round2(state.monthlyAdded),
       used: round2(state.used),
-      remaining,
-      monthlyLimit,
       deployedThisMonth: round2(state.deployedThisMonth),
-      monthlyRemaining,
+      monthlyLimit,
+      monthlyRemaining: round2(Math.max(0, monthlyLimit - state.deployedThisMonth)),
       monthlyDeploymentPct: round2(
         monthlyLimit > 0 ? (state.deployedThisMonth / monthlyLimit) * 100 : 0
       ),
-      status: remaining <= 0 ? 'exhausted' : state.used > 0 ? 'partial' : 'available',
+      status: state.balance <= 0 ? 'exhausted' : state.deployedThisMonth > 0 ? 'partial' : 'available',
       level,
       deployPct: pct,
       deploySuggestion,
+      opportunities: remainingSundaysInMonth(now),
     };
   }
 
   /**
    * 执行一次加速释放。
-   * 实际释放 = min(等级比例金额, 剩余余额, 本月剩余额度)
+   * 实际释放 = min(当前余额 × 等级比例, 当前余额, 本月剩余额度)
    */
   async deploy(
     level: RiskLevel,
     config: AccelerationEngineConfig,
     now: Date = new Date()
   ): Promise<DeployResult> {
-    let state = await this.loadState(config.initialReserve, now);
+    let state = await this.loadState(config.monthlyAdded, now);
     const pct = riskLevelDeployPct(level, config.rules);
-    const requestedAmount = round2((state.initialReserve * pct) / 100);
-    const monthlyLimit = round2((state.initialReserve * config.rules.monthlyMaxDeploymentPct) / 100);
-    const remaining = round2(Math.max(0, state.initialReserve - state.used));
-    const monthlyRemaining = round2(Math.max(0, monthlyLimit - state.deployedThisMonth));
+    // 本月加速资金额度 / 本月已使用金额（固定释放基数，避免递减）
+    const monthlyAccelerationBudget = round2(state.monthlyAdded);
+    const usedAccelerationAmount = round2(state.deployedThisMonth);
+    const requestedAmount = round2((monthlyAccelerationBudget * pct) / 100);
+    const monthlyLimit = round2(
+      (monthlyAccelerationBudget * config.rules.monthlyMaxDeploymentPct) / 100
+    );
+    const remaining = round2(state.balance);
+    const monthlyRemaining = round2(Math.max(0, monthlyLimit - usedAccelerationAmount));
 
     const base: Omit<DeployResult, 'status' | 'deployed'> = {
       level,
@@ -121,8 +155,9 @@ export class AccelerationReserveEngine {
 
     state = {
       ...state,
-      used: round2(state.used + actualAmount),
+      balance: round2(state.balance - actualAmount),
       deployedThisMonth: round2(state.deployedThisMonth + actualAmount),
+      used: round2(state.used + actualAmount),
       lastDeployAt: now.toISOString(),
     };
     await this.store.save(state);
@@ -131,7 +166,7 @@ export class AccelerationReserveEngine {
       level,
       requestedAmount,
       actualAmount,
-      remaining: round2(Math.max(0, state.initialReserve - state.used)),
+      remaining: round2(state.balance),
       monthlyRemaining: round2(Math.max(0, monthlyLimit - state.deployedThisMonth)),
       state,
       deployed: true,

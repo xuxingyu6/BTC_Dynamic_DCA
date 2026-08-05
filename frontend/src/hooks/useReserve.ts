@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/services/api';
+import { OPPORTUNITY_LABELS } from '@/utils/format';
 import type { ReserveDeployResult, ReserveStatus } from '@/types';
 
 /**
@@ -33,7 +34,7 @@ export function useReserve() {
       const result = await api.deployReserve();
       setMessage(
         result.result.deployed
-          ? `已释放 $${result.result.actualAmount}（Level ${result.level}）`
+          ? `已释放 $${result.result.actualAmount}（${OPPORTUNITY_LABELS[result.level]}）`
           : result.result.status === 'exhausted'
             ? '加速资金已耗尽，暂不执行'
             : result.result.status === 'month-limit-reached'

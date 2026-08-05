@@ -9,7 +9,7 @@ import { Toast } from '@/components/ui/Toast';
 import { useMarket } from '@/context/MarketDataContext';
 import { useRecords } from '@/hooks/useRecords';
 import { cn } from '@/utils/cn';
-import { fmtQty, fmtUsd, STATE_META } from '@/utils/format';
+import { fmtQty, fmtUsd, OPPORTUNITY_LABELS, STATE_META } from '@/utils/format';
 import type { InvestmentRecord } from '@/types';
 
 const STATE_OPTIONS = [
@@ -246,7 +246,7 @@ export function Records() {
                   onChange={(e) => setForm((f) => ({ ...f, transactionType: e.target.value }))}
                 >
                   <option value="manual">手动记录</option>
-                  <option value="core">Core DCA 底仓</option>
+                  <option value="core">长期底仓定投</option>
                   <option value="acceleration">加速买入</option>
                 </SelectInput>
               </Field>
@@ -256,9 +256,9 @@ export function Records() {
                     value={form.riskLevel}
                     onChange={(e) => setForm((f) => ({ ...f, riskLevel: e.target.value }))}
                   >
-                    <option value="1">Level 1 · 轻度低估</option>
-                    <option value="2">Level 2 · 明显低估</option>
-                    <option value="3">Level 3 · 极端低估</option>
+                    <option value="1">轻度机会（1 个指标）</option>
+                    <option value="2">明显机会（2 个指标）</option>
+                    <option value="3">极端机会（3 个指标）</option>
                   </SelectInput>
                 </Field>
               ) : (
@@ -322,10 +322,10 @@ export function Records() {
                           <td className="py-3 pr-4">
                             {r.transactionType === 'acceleration' ? (
                               <Badge tone="amber">
-                                加速{r.riskLevel ? ` · L${r.riskLevel}` : ''}
+                                加速买入{r.riskLevel ? ` · ${OPPORTUNITY_LABELS[r.riskLevel]}` : ''}
                               </Badge>
                             ) : r.transactionType === 'core' ? (
-                              <Badge tone="cyan">底仓</Badge>
+                              <Badge tone="cyan">长期底仓定投</Badge>
                             ) : (
                               <Badge tone="slate">手动</Badge>
                             )}

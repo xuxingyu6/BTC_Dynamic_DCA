@@ -56,10 +56,6 @@ export interface IndicatorThresholds {
 }
 
 export interface StrategyConfig {
-  baseAmount: number;
-  level1Amount: number;
-  level2Amount: number;
-  level3Amount: number;
   frequency: Frequency;
   feeRatePct: number;
 }
@@ -83,11 +79,8 @@ export interface HistoryResponse {
 export interface BacktestRequest {
   startDate: string;
   endDate: string;
-  frequency: Frequency;
-  baseAmount: number;
-  level1Amount: number;
-  level2Amount: number;
-  level3Amount: number;
+  /** 每月投入预算（两种策略共用同一总预算） */
+  monthlyInvestmentAmount: number;
   ma200Multiplier: number;
   mvrvThreshold: number;
   puellThreshold: number;
@@ -128,12 +121,22 @@ export interface BacktestResponse {
   generatedAt: string;
   days: number;
   buyCount: number;
+  /** 资金公平校验：两个策略投入本金必须一致 */
+  fairness: {
+    fair: boolean;
+    investedA: number;
+    investedB: number;
+    diff: number;
+    totalBudget: number;
+    months: number;
+  };
   summary: {
     a: StrategyMetrics;
     b: StrategyMetrics;
     delta: {
-      extraInvested: number;
       extraBtc: number;
+      /** BTC 数量提升比例：动态相对普通 */
+      btcGainPct: number;
       returnDeltaPct: number;
       avgCostDeltaPct: number;
     };
@@ -172,9 +175,8 @@ export interface RecordInput {
 }
 
 export interface CapitalAllocationConfig {
-  monthlyBudget: number;
-  corePercentage: number;
-  reservePercentage: number;
+  /** 每月投资金额（USD）——唯一由用户自定义的资金参数 */
+  monthlyInvestmentAmount: number;
 }
 
 export interface AccelerationRulesConfig {
@@ -182,7 +184,6 @@ export interface AccelerationRulesConfig {
   level2Pct: number;
   level3Pct: number;
   monthlyMaxDeploymentPct: number;
-  initialReserve: number | null;
 }
 
 export interface AppSettings {
@@ -190,6 +191,13 @@ export interface AppSettings {
   indicators: IndicatorThresholds;
   capital: CapitalAllocationConfig;
   acceleration: AccelerationRulesConfig;
+  portfolio: {
+    /** 持仓来源模式：manual = 手动录入（当前）；records = 交易记录自动计算（预留） */
+    mode: 'manual' | 'records';
+    btcAmount: number;
+    /** 平均持仓成本（USD/BTC） */
+    avgCost: number;
+  };
   data: {
     providerMode: 'auto' | 'demo';
     manualOverride: { mvrv: number | null; puell: number | null };
@@ -201,32 +209,65 @@ export type RiskLevel = 0 | 1 | 2 | 3;
 export type ReserveStatusType = 'available' | 'partial' | 'exhausted';
 
 export interface CapitalAllocationResult {
-  monthlyBudget: number;
-  corePercentage: number;
-  reservePercentage: number;
+  monthlyInvestmentAmount: number;
+  coreRatio: number;
+  reserveRatio: number;
   coreMonthly: number;
   reserveMonthly: number;
   coreDaily: number;
-  daysInMonth: number;
+  daysPerMonth: number;
+}
+
+export interface OpportunitiesInfo {
+  /** 本月剩余加仓机会（周日）次数 */
+  remaining: number;
+  /** 剩余周日日期列表（YYYY-MM-DD） */
+  dates: string[];
+  /** 最近一次检测日期 */
+  nextCheck: string | null;
 }
 
 export interface ReserveStatus {
   month: string;
-  initialReserve: number;
+  /** 当前加速资金余额（累计余额） */
+  balance: number;
+  /** 历史剩余 */
+  carryover: number;
+  /** 本月新增加速资金 */
+  monthlyAdded: number;
+  /** 历史累计已使用 */
   used: number;
-  remaining: number;
-  monthlyLimit: number;
+  /** 本月已执行加速买入 */
   deployedThisMonth: number;
+  monthlyLimit: number;
   monthlyRemaining: number;
   monthlyDeploymentPct: number;
   status: ReserveStatusType;
   level: RiskLevel;
   deployPct: number;
   deploySuggestion: number;
+  opportunities: OpportunitiesInfo;
   triggered: number;
   price: number;
   allocation: CapitalAllocationResult;
   rules: AccelerationRulesConfig;
+}
+
+/** BTC 持仓统计（用户输入 + 自动计算） */
+export interface PortfolioStatus {
+  mode: 'manual' | 'records';
+  btcAmount: number;
+  /** 平均持仓成本（USD/BTC） */
+  avgCost: number;
+  price: number;
+  /** 持仓本金 = BTC 数量 × 平均成本 */
+  principal: number;
+  /** 当前持仓价值 = BTC 数量 × 当前价格 */
+  currentValue: number;
+  /** 浮动盈亏 = 当前价值 − 持仓本金 */
+  pnl: number;
+  /** 收益率 = (当前价格 − 平均成本) ÷ 平均成本 */
+  pnlPct: number;
 }
 
 export interface ReserveDeployResult {
@@ -244,3 +285,14 @@ export interface ReserveDeployResult {
   triggered: number;
   price: number;
 }
+
+/** 策略核心固定参数（与后端 fixedRules.ts 保持一致，仅供展示/默认值使用） */
+export const CAPITAL_RULES = {
+  coreRatio: 0.4,
+  reserveRatio: 0.6,
+  level1Release: 0.1,
+  level2Release: 0.3,
+  level3Release: 0.6,
+  monthlyMaxDeploymentPct: 100,
+  coreDailyDivisor: 30,
+} as const;
