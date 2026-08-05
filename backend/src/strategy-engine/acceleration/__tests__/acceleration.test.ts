@@ -26,6 +26,7 @@ class InMemoryStore implements ReserveStateRepository {
     monthlyAdded: 0,
     used: 0,
     deployedThisMonth: 0,
+    monthlyAccelerationExecutions: 0,
     lastDeployAt: null,
   };
 
@@ -244,5 +245,62 @@ describe('AccelerationReserveEngine（滚动资金池）', () => {
     assert.equal(status.monthlyAdded, 1200);
     assert.equal(status.balance, 1200);
     assert.equal(status.deploySuggestion, 360); // 1200 × 30%
+  });
+
+  test('每次成功释放加速买入 +1，剩余加仓机会递减', async () => {
+    const store = new InMemoryStore();
+    const engine = new AccelerationReserveEngine(store);
+    const config = makeConfig();
+
+    const s0 = await engine.getStatus(config, 2, NOW);
+    assert.equal(s0.monthlyOpportunities, 4); // 2026-08-05 剩余周日：8/9、8/16、8/23、8/30
+    assert.equal(s0.monthlyExecutions, 0);
+    assert.equal(s0.monthlyRemainingOpportunities, 4);
+
+    await engine.deploy(2, config, NOW);
+    const s1 = await engine.getStatus(config, 2, NOW);
+    assert.equal(s1.monthlyExecutions, 1);
+    assert.equal(s1.monthlyRemainingOpportunities, 3);
+
+    await engine.deploy(2, config, NOW);
+    const s2 = await engine.getStatus(config, 2, NOW);
+    assert.equal(s2.monthlyExecutions, 2);
+    assert.equal(s2.monthlyRemainingOpportunities, 2);
+
+    // 持久化字段同步更新
+    const persisted = await store.get();
+    assert.equal(persisted.monthlyAccelerationExecutions, 2);
+  });
+
+  test('跨月自动重置 monthlyAccelerationExecutions = 0', async () => {
+    const store = new InMemoryStore();
+    const engine = new AccelerationReserveEngine(store);
+    const config = makeConfig();
+
+    await engine.deploy(2, config, NOW);
+    assert.equal((await store.get()).monthlyAccelerationExecutions, 1);
+
+    const nextMonth = new Date('2026-09-01T08:00:00.000Z');
+    const status = await engine.getStatus(config, 2, nextMonth);
+    assert.equal(status.month, '2026-09');
+    assert.equal(status.monthlyExecutions, 0);
+    assert.equal((await store.get()).monthlyAccelerationExecutions, 0);
+  });
+
+  test('释放失败（Level 0 / 余额耗尽）不增加已执行次数', async () => {
+    const store = new InMemoryStore();
+    store.state = { ...store.state, balance: 0, monthlyAdded: 600 };
+    const engine = new AccelerationReserveEngine(store);
+
+    const r1 = await engine.deploy(0, makeConfig(), NOW);
+    assert.equal(r1.deployed, false);
+
+    const r2 = await engine.deploy(3, makeConfig(), NOW);
+    assert.equal(r2.deployed, false);
+    assert.equal(r2.status, 'exhausted');
+
+    const status = await engine.getStatus(makeConfig(), 0, NOW);
+    assert.equal(status.monthlyExecutions, 0);
+    assert.equal(status.monthlyRemainingOpportunities, 4);
   });
 });

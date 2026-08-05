@@ -50,6 +50,7 @@ export class AccelerationReserveEngine {
         monthlyAdded: round2(monthlyAdded),
         balance: round2(state.balance + monthlyAdded),
         deployedThisMonth: 0,
+        monthlyAccelerationExecutions: 0,
       };
       await this.store.save(next);
       return next;
@@ -83,6 +84,9 @@ export class AccelerationReserveEngine {
     );
     const pct = riskLevelDeployPct(level, config.rules);
     const deploySuggestion = round2((monthlyAccelerationBudget * pct) / 100);
+    const monthlyOpportunities = remainingSundaysInMonth(now).remaining;
+    const monthlyExecutions = state.monthlyAccelerationExecutions;
+    const monthlyRemainingOpportunities = Math.max(0, monthlyOpportunities - monthlyExecutions);
 
     return {
       month: state.month,
@@ -101,6 +105,9 @@ export class AccelerationReserveEngine {
       deployPct: pct,
       deploySuggestion,
       opportunities: remainingSundaysInMonth(now),
+      monthlyOpportunities,
+      monthlyExecutions,
+      monthlyRemainingOpportunities,
     };
   }
 
@@ -158,6 +165,7 @@ export class AccelerationReserveEngine {
       balance: round2(state.balance - actualAmount),
       deployedThisMonth: round2(state.deployedThisMonth + actualAmount),
       used: round2(state.used + actualAmount),
+      monthlyAccelerationExecutions: state.monthlyAccelerationExecutions + 1,
       lastDeployAt: now.toISOString(),
     };
     await this.store.save(state);

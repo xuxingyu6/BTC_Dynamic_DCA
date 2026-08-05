@@ -85,9 +85,9 @@ export function FundingPlanCards({
         </p>
         <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
           <p className="rounded-lg border border-line bg-inset px-2.5 py-2 text-muted">
-            本月剩余机会：
+            剩余加仓机会：
             <span className="ml-1 font-mono font-bold text-primary">
-              {reserve ? `${reserve.opportunities.remaining}次` : '--'}
+              {reserve ? `${reserve.monthlyRemainingOpportunities}次` : '--'}
             </span>
           </p>
           <p className="rounded-lg border border-line bg-inset px-2.5 py-2 text-muted">

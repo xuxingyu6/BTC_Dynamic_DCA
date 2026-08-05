@@ -24,6 +24,7 @@ function defaultState(): ReserveState {
     monthlyAdded: 0,
     used: 0,
     deployedThisMonth: 0,
+    monthlyAccelerationExecutions: 0,
     lastDeployAt: null,
   };
 }
@@ -63,6 +64,7 @@ export class ReserveStateStore implements ReserveStateRepository {
         monthlyAdded,
         used: legacyUsed,
         deployedThisMonth: Number(parsed.deployedThisMonth) || 0,
+        monthlyAccelerationExecutions: Number(parsed.monthlyAccelerationExecutions) || 0,
         lastDeployAt: typeof parsed.lastDeployAt === 'string' ? parsed.lastDeployAt : null,
       };
     } catch {

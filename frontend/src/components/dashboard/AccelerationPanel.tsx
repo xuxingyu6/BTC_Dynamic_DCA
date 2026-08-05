@@ -130,15 +130,30 @@ export function AccelerationPanel({
       </div>
 
       {/* 资金池状态 */}
-      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <MiniStat label="累计余额" value={fmtUsd(reserve?.balance)} />
         <MiniStat label="本月新增" value={fmtUsd(reserve?.monthlyAdded)} accent="text-accent" />
         <MiniStat label="历史剩余" value={fmtUsd(reserve?.carryover)} />
         <MiniStat label="本月已使用" value={fmtUsd(reserve?.deployedThisMonth)} accent="text-warn" />
+      </div>
+
+      {/* 本月加仓机会 */}
+      <div className="mt-3 grid grid-cols-3 gap-3">
         <MiniStat
-          label="本月剩余机会"
-          value={reserve ? `${reserve.opportunities.remaining}次` : '--'}
+          label="本月检测机会"
+          value={reserve ? `${reserve.monthlyOpportunities}次` : '--'}
           sub={reserve?.opportunities.dates.length ? reserve.opportunities.dates.map((d) => d.slice(5).replace('-', '/')).join('、') : '本月已无检测日'}
+        />
+        <MiniStat
+          label="本月已执行"
+          value={reserve ? `${reserve.monthlyExecutions}次` : '--'}
+          accent="text-warn"
+        />
+        <MiniStat
+          label="剩余加仓机会"
+          value={reserve ? `${reserve.monthlyRemainingOpportunities}次` : '--'}
+          accent={reserve && reserve.monthlyRemainingOpportunities > 0 ? 'text-up' : 'text-down'}
+          sub="理论 − 已执行"
         />
       </div>
 

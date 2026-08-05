@@ -247,6 +247,12 @@ export interface ReserveStatus {
   deployPct: number;
   deploySuggestion: number;
   opportunities: OpportunitiesInfo;
+  /** 本月理论检测机会次数（本月剩余周日数） */
+  monthlyOpportunities: number;
+  /** 本月已执行加速买入次数 */
+  monthlyExecutions: number;
+  /** 剩余加仓机会 = 本月理论检测机会 − 本月已执行 */
+  monthlyRemainingOpportunities: number;
   triggered: number;
   price: number;
   allocation: CapitalAllocationResult;

@@ -44,6 +44,8 @@ export interface ReserveState {
   used: number;
   /** 本月已执行加速买入 */
   deployedThisMonth: number;
+  /** 本月已执行加速买入次数（每次成功释放 +1），跨月重置为 0 */
+  monthlyAccelerationExecutions: number;
   lastDeployAt: string | null;
 }
 
@@ -71,6 +73,12 @@ export interface ReserveStatus {
   deploySuggestion: number; // 理论释放金额（当前余额 × 等级比例）
   /** 本月剩余加仓机会（每周日检测） */
   opportunities: OpportunitiesInfo;
+  /** 本月理论检测机会次数（本月剩余周日数） */
+  monthlyOpportunities: number;
+  /** 本月已执行加速买入次数 */
+  monthlyExecutions: number;
+  /** 剩余加仓机会 = 本月理论检测机会 − 本月已执行 */
+  monthlyRemainingOpportunities: number;
 }
 
 /** 本月剩余加仓机会信息 */
