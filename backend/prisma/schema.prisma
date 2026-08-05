@@ -29,3 +29,21 @@ model InvestmentRecord {
   @@index([date])
   @@map("investment_records")
 }
+
+/// 应用设置持久化（单行 JSON 表，id 恒为 1）
+model AppSetting {
+  id        Int      @id @default(1)
+  data      Json
+  updatedAt DateTime @updatedAt
+
+  @@map("app_settings")
+}
+
+/// 加速资金池状态持久化（单行 JSON 表，id 恒为 1）
+model ReserveStateRow {
+  id        Int      @id @default(1)
+  data      Json
+  updatedAt DateTime @updatedAt
+
+  @@map("reserve_state")
+}

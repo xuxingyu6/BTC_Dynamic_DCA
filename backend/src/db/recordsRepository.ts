@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
 import { config } from '../config';
+import { getPrisma } from './prisma';
 
 /**
  * 投资记录仓储。
@@ -237,24 +238,10 @@ class PrismaRecordRepository implements RecordRepository {
 
 // ---------------------------------------------------------------- 工厂
 
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
-  ]);
-}
-
 async function tryCreatePrisma(): Promise<PrismaRecordRepository | null> {
-  if (config.databaseMode !== 'postgres') return null;
-  try {
-    const { PrismaClient } = await import('@prisma/client');
-    const client = new PrismaClient();
-    await withTimeout(client.$queryRaw`SELECT 1`, 2500);
-    return new PrismaRecordRepository(client as unknown as PrismaLike);
-  } catch (err) {
-    console.warn(`[db] PostgreSQL 不可用，回退到文件存储: ${(err as Error).message}`);
-    return null;
-  }
+  const client = await getPrisma();
+  if (!client) return null;
+  return new PrismaRecordRepository(client as unknown as PrismaLike);
 }
 
 let repoPromise: Promise<RecordRepository> | null = null;

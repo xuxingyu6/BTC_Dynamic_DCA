@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { z } from 'zod';
 import { config } from '../config';
+import { getPrisma } from '../db/prisma';
 import type { IndicatorThresholds, StrategyConfig } from '../strategy-engine/types';
 import type { AccelerationRulesConfig, CapitalAllocationConfig } from '../strategy-engine/acceleration/types';
 import type { PortfolioMode } from '../utils/portfolio';
@@ -155,11 +156,66 @@ export class SettingsStore {
   private current: AppSettings | null = null;
   private readonly file = path.join(config.dataDir, 'settings.json');
 
-  async get(): Promise<AppSettings> {
-    if (this.current) return this.current;
+  /** PostgreSQL 单行表读写（id 恒为 1），失败时回退本地文件 */
+  private async loadRaw(): Promise<unknown | null> {
+    if (config.databaseMode === 'postgres') {
+      const prisma = await getPrisma();
+      if (prisma) {
+        try {
+          const row = await (
+            prisma as unknown as {
+              appSetting: {
+                findUnique(args: { where: { id: number } }): Promise<{ data: unknown } | null>;
+              };
+            }
+          ).appSetting.findUnique({ where: { id: 1 } });
+          return row?.data ?? null;
+        } catch (err) {
+          console.warn(`[settings] 读取 PostgreSQL 失败，回退文件: ${(err as Error).message}`);
+        }
+      }
+    }
     try {
       const raw = await fs.readFile(this.file, 'utf8');
-      const obj = JSON.parse(raw) as { portfolio?: Record<string, unknown> };
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  private async saveRaw(settings: AppSettings): Promise<void> {
+    if (config.databaseMode === 'postgres') {
+      const prisma = await getPrisma();
+      if (prisma) {
+        await (
+          prisma as unknown as {
+            appSetting: {
+              upsert(args: {
+                where: { id: number };
+                create: { id: number; data: unknown };
+                update: { data: unknown };
+              }): Promise<unknown>;
+            };
+          }
+        ).appSetting.upsert({
+          where: { id: 1 },
+          create: { id: 1, data: settings },
+          update: { data: settings },
+        });
+        return;
+      }
+    }
+    await fs.mkdir(path.dirname(this.file), { recursive: true });
+    await fs.writeFile(this.file, JSON.stringify(settings, null, 2), 'utf8');
+  }
+
+  async get(): Promise<AppSettings> {
+    if (config.databaseMode !== 'postgres' && this.current) return this.current;
+    try {
+      const raw = await this.loadRaw();
+      const obj = (raw && typeof raw === 'object'
+        ? raw
+        : {}) as { portfolio?: Record<string, unknown> };
       // 兼容旧版持仓配置：累计投入金额（totalInvested）→ 平均持仓成本（avgCost）
       const pf = obj.portfolio;
       if (pf && typeof pf === 'object') {
@@ -202,15 +258,13 @@ export class SettingsStore {
     };
     const validated = appSettingsSchema.parse(withFixedRules(merged));
     this.current = validated;
-    await fs.mkdir(path.dirname(this.file), { recursive: true });
-    await fs.writeFile(this.file, JSON.stringify(validated, null, 2), 'utf8');
+    await this.saveRaw(validated);
     return validated;
   }
 
   async reset(): Promise<AppSettings> {
     this.current = withFixedRules(defaultSettings());
-    await fs.mkdir(path.dirname(this.file), { recursive: true });
-    await fs.writeFile(this.file, JSON.stringify(this.current, null, 2), 'utf8');
+    await this.saveRaw(this.current);
     return this.current;
   }
 }
