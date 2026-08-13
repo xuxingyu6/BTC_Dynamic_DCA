@@ -187,22 +187,28 @@ export class SettingsStore {
     if (config.databaseMode === 'postgres') {
       const prisma = await getPrisma();
       if (prisma) {
-        await (
-          prisma as unknown as {
-            appSetting: {
-              upsert(args: {
-                where: { id: number };
-                create: { id: number; data: unknown };
-                update: { data: unknown };
-              }): Promise<unknown>;
-            };
-          }
-        ).appSetting.upsert({
-          where: { id: 1 },
-          create: { id: 1, data: settings },
-          update: { data: settings },
-        });
-        return;
+        try {
+          await (
+            prisma as unknown as {
+              appSetting: {
+                upsert(args: {
+                  where: { id: number };
+                  create: { id: number; data: unknown };
+                  update: { data: unknown };
+                }): Promise<unknown>;
+              };
+            }
+          ).appSetting.upsert({
+            where: { id: 1 },
+            create: { id: 1, data: settings },
+            update: { data: settings },
+          });
+          return;
+        } catch (err) {
+          console.warn(
+            `[settings] 写入 PostgreSQL 失败，仅保存在内存: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
       }
     }
     try {

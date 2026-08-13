@@ -42,11 +42,11 @@ export class ReserveStateStore implements ReserveStateRepository {
         try {
           const row = await (
             prisma as unknown as {
-              reserveState: {
+              reserveStateRow: {
                 findUnique(args: { where: { id: number } }): Promise<{ data: unknown } | null>;
               };
             }
-          ).reserveState.findUnique({ where: { id: 1 } });
+          ).reserveStateRow.findUnique({ where: { id: 1 } });
           return row?.data ?? null;
         } catch (err) {
           console.warn(`[reserve] 读取 PostgreSQL 失败，回退文件: ${(err as Error).message}`);
@@ -65,22 +65,28 @@ export class ReserveStateStore implements ReserveStateRepository {
     if (config.databaseMode === 'postgres') {
       const prisma = await getPrisma();
       if (prisma) {
-        await (
-          prisma as unknown as {
-            reserveState: {
-              upsert(args: {
-                where: { id: number };
-                create: { id: number; data: unknown };
-                update: { data: unknown };
-              }): Promise<unknown>;
-            };
-          }
-        ).reserveState.upsert({
-          where: { id: 1 },
-          create: { id: 1, data: state },
-          update: { data: state },
-        });
-        return;
+        try {
+          await (
+            prisma as unknown as {
+              reserveStateRow: {
+                upsert(args: {
+                  where: { id: number };
+                  create: { id: number; data: unknown };
+                  update: { data: unknown };
+                }): Promise<unknown>;
+              };
+            }
+          ).reserveStateRow.upsert({
+            where: { id: 1 },
+            create: { id: 1, data: state },
+            update: { data: state },
+          });
+          return;
+        } catch (err) {
+          console.warn(
+            `[reserve] 写入 PostgreSQL 失败，仅保存在内存: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
       }
     }
     try {
