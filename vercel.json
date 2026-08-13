@@ -7,8 +7,8 @@
     "backend": {
       "root": "backend",
       "framework": "express",
-      "entrypoint": "server.cjs",
-      "buildCommand": "npm run build && npm run prisma:generate"
+      "entrypoint": "api/index.ts",
+      "buildCommand": "npm run prisma:generate"
     }
   },
   "rewrites": [
